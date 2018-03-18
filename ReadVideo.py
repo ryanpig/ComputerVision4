@@ -39,11 +39,15 @@ for k in range(len(globFilters)):
             # cv2.imshow('Middle Frame', fm)
             # cv2.waitKey(20)
             # Get the filename & Write the frame into JPG file.
-            dir = curFile.split("v_")[0] + "frames\\"
+            # dir = curFile.split("v_")[0] + "frames\\"
+            dir = ".\Data\\training\\"
+
             fileName = curFile.split("v_")[1].split(".")[0]
             fileName = fileName + ".jpg"
             path = dir + fileName
-            ret2 = cv2.imwrite(path, fm)
+            # resize frame to 120x120
+            fm_resize = cv2.resize(fm, (120, 120))
+            ret2 = cv2.imwrite(path, fm_resize)
             if ret2 == True:
             #   print('write to file:', fileName)
                 countWrite = countWrite + 1

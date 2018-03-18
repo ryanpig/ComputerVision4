@@ -5,9 +5,6 @@ from PIL import Image
 #image = tf.image.decode_jpeg("Hist.jpg")
 #resized_image = tf.image.resize_images(image, [299, 299])
 
-#print(image)
-#print(resized_image)
-
 #  list of files to read
 filename_queue = tf.train.string_input_producer(["Hist.jpg", "man.jpg"])
 
