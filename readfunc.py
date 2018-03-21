@@ -3,9 +3,10 @@ import tensorflow as tf
 import glob
 import cv2
 import  numpy as np
-import random
-import matplotlib.pyplot as plt
-from PIL import Image
+
+# Configuration
+Division_ratio = 0.8 # the data ratio for training and evaluating data.
+
 # Training class
 class tmp:
     def __init__(self):
@@ -15,7 +16,17 @@ class data:
     def __init__(self):
         self.labels = 0
         self.images = 0 # np.zeros([-1,120,120,3],dtype=np.uint8)
+class examples:
+    def __init__(self, len):
+        self.labels = np.zeros(len, dtype=np.int32)
+        self.images = np.zeros([len,120,120,3], dtype=np.float32)
+
 class train:
+    def __init__(self):
+        self.labels = 0
+        self.images = 0 # np.zeros([-1,120,120,3],dtype=np.uint8)
+
+class eval:
     def __init__(self):
         self.labels = 0
         self.images = 0 # np.zeros([-1,120,120,3],dtype=np.uint8)
@@ -25,14 +36,22 @@ class test:
         self.labels = 0
         self.images = 0 # np.zeros([-1,120,120,3],dtype=np.uint8)
 
-def ReadData(unused_argv):
-    # Get filelist of training data set
-    gTraingFilters = './Data/training/*.*'
-    t = './Data/BrushingTeeth/*.*'
-    filelist = glob.glob(gTraingFilters)
+def normalize(arr):
+    #arr=arr.astype('float32')
+    if arr.max() > 1.0:
+        arr/=255.0
+    return arr
+
+def ReadData():
+    # Get file lists from both training and testing folders
+    gTrainFilters = './Data/training/*.*'
+    filelist = glob.glob(gTrainFilters)
+    gTestFilters = './Data/testing/*.*'
+    filelist_Test = glob.glob(gTestFilters)
+
     lenTr = len(filelist)
     labels = np.zeros(lenTr, dtype=np.int32)
-    data.images = np.zeros([lenTr,120,120])
+    data.images = np.zeros([lenTr,120,120,3])
 
     # labeling
     for i in range(lenTr):
@@ -41,22 +60,25 @@ def ReadData(unused_argv):
         labels[i] = 2 if 'JumpingJack' in filelist[i] else labels[i]
         labels[i] = 3 if 'Lunges' in filelist[i] else labels[i]
         labels[i] = 4 if 'WallPushups' in filelist[i] else labels[i]
-        data.images[i] = cv2.imread(filelist[i],0)
-
+        # 0 for grey scale
+        # data.images[i] = cv2.imread(filelist[i],0)
+        data.images[i] = cv2.imread(filelist[i])
+        normalize(data.images[i])
     data.labels = labels
-    train_d, test_d = DataDivision(data,0.8)
-    return train_d, test_d
+    # deter
+    train_d, eval_d = DataDivision(data,Division_ratio)
+    return train_d, eval_d
 
 def DataDivision(data, division):
     total_len = len(data.labels)
     tr_len = int(total_len * division)
     te_len = total_len - tr_len
-    print("training examples:", tr_len, "- testing examples:", te_len)
-    # initialize train & test
-    train.images =  np.zeros([tr_len,120,120],dtype=np.float16)
-    test.images =  np.zeros([te_len,120,120], dtype=np.float16)
+    print("training examples:", tr_len, "- evaluate examples:", te_len)
+    # initialize train & eval
+    train.images =  np.zeros([tr_len,120,120,3],dtype=np.float32)
+    eval.images =  np.zeros([te_len,120,120,3], dtype=np.float32)
     train.labels = np.zeros([tr_len])
-    test.labels = np.zeros([te_len])
+    eval.labels = np.zeros([te_len])
     # shuffle and divide the data
     arr = np.arange(total_len)
     np.random.shuffle(arr)
@@ -66,48 +88,15 @@ def DataDivision(data, division):
         train.images[i] = data.images[ind]
     for k in range(te_len):
         ind = arr[k]
-        test.labels[k] = data.labels[ind]
-        test.images[k] = data.images[ind]
-    return train, test
+        eval.labels[k] = data.labels[ind]
+        eval.images[k] = data.images[ind]
+    return train, eval
 
-un = 1
-train1,test1 = ReadData(un)
+
+train1,eval1 = ReadData()
 train_data = train1.images  # Returns np.array
 train_labels = np.asarray(train1.labels, dtype=np.int32)
-eval_data = test1.images  # Returns np.array
-eval_labels = np.asarray(test1.labels, dtype=np.int32)
-
-'''
-#  list of files to read
-filename_queue = tf.train.string_input_producer(filelist)
-reader = tf.WholeFileReader()
-key, value = reader.read(filename_queue)
-my_img = tf.image.decode_jpeg(value, channels=3)
-#my_img = tf.image.decode_png(value) # use png or jpg decoder based on your files.
-print(my_img)
-init_op = tf.global_variables_initializer()
-
-with tf.Session() as sess:
-  #sess.run(init_op)
-  sess.as_default()
-
-  # Start populating the filename queue.
-  coord = tf.train.Coordinator()
-  threads = tf.train.start_queue_runners(coord=coord)
-  for i in range(lenTr): #length of your filename list
-    image = my_img.eval() #here is your image Tensor :)
-    print(image.shape)
-    #Image.fromarray(np.asarray(image)).show()
-
-
-  #print(image.shape)
-
-  coord.request_stop()
-  coord.join(threads)
-'''
-
-#train_data = mnist.train.images  # Returns np.array
-#train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
-#eval_data = mnist.test.images  # Returns np.array
-#eval_labels = np.asarray(mnist.test.labels, dtype=np.int32)
+eval_data = eval1.images  # Returns np.array
+eval_labels = np.asarray(eval1.labels, dtype=np.int32)
+#test_data =
 

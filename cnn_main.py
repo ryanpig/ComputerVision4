@@ -143,7 +143,7 @@ def cnn_model_fn(features, labels, mode):
 
   predictions = {
       # Generate predictions (for PREDICT and EVAL mode)
-      "classes": tf.argmax(input=logits, axis=1),
+      "classes": tf.argmax(input=logits, axis=1,name="predication_classes"),
       # Add `softmax_tensor` to the graph. It is used for PREDICT and by the
       # `logging_hook`.
       "probabilities": tf.nn.softmax(logits, name="softmax_tensor")
@@ -166,10 +166,16 @@ def cnn_model_fn(features, labels, mode):
         global_step=tf.train.get_global_step())
     return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
 
+
+
   # Add evaluation metrics (for EVAL mode)
   eval_metric_ops = {
       "accuracy": tf.metrics.accuracy(
           labels=labels, predictions=predictions["classes"])}
+
+  predi = predictions["classes"]
+  comfusion = tf.confusion_matrix(labels,predi)
+
   return tf.estimator.EstimatorSpec(
       mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
@@ -196,11 +202,14 @@ def main(unused_argv):
   '''
   # Create the Estimator
   action_classifier = tf.estimator.Estimator(
-      model_fn=cnn_model_fn, model_dir="/tmp/mnist_convnet_model2")
+      model_fn=cnn_model_fn, model_dir="/tmp/mnist_convnet_model4")
 
   # Set up logging for predictions
   # Log the values in the "Softmax" tensor with label "probabilities"
   tensors_to_log = {"probabilities": "softmax_tensor"}
+  tensors_to_log2 = {"classes": "predication_classes"}
+  logging_hook2 = tf.train.LoggingTensorHook(
+      tensors=tensors_to_log2, every_n_iter=50)
   logging_hook = tf.train.LoggingTensorHook(
       tensors=tensors_to_log, every_n_iter=50)
 
@@ -208,12 +217,12 @@ def main(unused_argv):
   train_input_fn = tf.estimator.inputs.numpy_input_fn(
       x={"x": train_data},
       y=train_labels,
-      batch_size=5,
+      batch_size=2,
       num_epochs=None,
       shuffle=True)
   action_classifier.train(
       input_fn=train_input_fn,
-      steps=100, #20000
+      steps=3, #20000
       hooks=[logging_hook])
 
   # Evaluate the model and print results
@@ -225,10 +234,6 @@ def main(unused_argv):
   eval_results = action_classifier.evaluate(input_fn=eval_input_fn)
   print(eval_results)
 
-  # write to log (failed)
-  with tf.Session() as sess:
-      tf.summary.merge_all()
-      train_writer = tf.summary.FileWriter('log/cnn', sess.graph)
 
 
 if __name__ == "__main__":

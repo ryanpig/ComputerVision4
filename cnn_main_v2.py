@@ -1,6 +1,8 @@
 # version 2
 # to build a 3ch CNN model
-from readfunc import  ReadData
+#from readfunc import ReadData
+from readfunc_v2 import readData
+
 import numpy as np
 import tensorflow as tf
 
@@ -50,61 +52,103 @@ def cnn_model_fn(features, labels, mode):
     return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
 
   # Add evaluation metrics (for EVAL mode)
+  m_confusion = tf.confusion_matrix(labels,predictions["classes"], 5)
+
   eval_metric_ops = {
       "accuracy": tf.metrics.accuracy(
           labels=labels, predictions=predictions["classes"])}
 
-  # predi = predictions["classes"]
-  # comfusion = tf.confusion_matrix(labels,predi)
 
+  # predi = predictions["classes"] , one batch results in two predictions [3 3]
+  # Save them and make confusion_matrix, outside of function.
+
+  #comfusion = tf.confusion_matrix(labels=labels,predictions=predi,
+                                  #num_classes=5,name='confusionMat')
   return tf.estimator.EstimatorSpec(
       mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
 
-def main(unused_argv):
-  # Load training and eval data
-  un = 1
-  train1, test1 = ReadData(un)
-  train_data = train1.images
-  train_labels = np.asarray(train1.labels, dtype=np.int32)
-  eval_data = test1.images
-  eval_labels = np.asarray(test1.labels, dtype=np.int32)
-
-  print(np.shape(train_data))
-  print(np.shape(eval_data))
-  print(train_labels)
-
-  # Create the Estimator
-  action_classifier = tf.estimator.Estimator(
-      model_fn=cnn_model_fn, model_dir="/tmp/mnist_convnet_model7")
-
-  # Set up logging for predictions
-  # Log the values in the "Softmax" tensor with label "probabilities"
-  tensors_to_log = {"probabilities": "softmax_tensor", "classes": "predication_classes"}
-  logging_hook = tf.train.LoggingTensorHook(
-      tensors=tensors_to_log, every_n_iter=50)
-
-  # Train the model
-  train_input_fn = tf.estimator.inputs.numpy_input_fn(
-      x={"x": train_data},
-      y=train_labels,
-      batch_size=2,
-      num_epochs=None,
-      shuffle=True)
-  action_classifier.train(
-      input_fn=train_input_fn,
-      steps=300, #20000
-      hooks=[logging_hook])
-
-  # Evaluate the model and print results
-  eval_input_fn = tf.estimator.inputs.numpy_input_fn(
-      x={"x": eval_data},
-      y=eval_labels,
-      num_epochs=1,
-      shuffle=False)
-  eval_results = action_classifier.evaluate(input_fn=eval_input_fn)
-  print(eval_results)
+#def main(unused_argv):
+# Load training and eval data
+'''
+un = 1
+train1, test1 = ReadData(un)
+train_data = train1.images
+train_labels = np.asarray(train1.labels, dtype=np.int32)
+eval_data = test1.images
+eval_labels = np.asarray(test1.labels, dtype=np.int32)
+'''
+train1,eval1, test1 = readData()
+train_data = train1.images
+train_labels = train1.labels
+eval_data = eval1.images
+eval_labels = eval1.labels
+test_data = test1.images
+test_labels =  test1.labels
 
 
-if __name__ == "__main__":
-  tf.app.run()
+print(np.shape(train_data))
+print(np.shape(eval_data))
+print(train_labels)
+
+# Create the Estimator
+action_classifier = tf.estimator.Estimator(
+  model_fn=cnn_model_fn, model_dir="/tmp/mnist_convnet_model9")
+
+# Set up logging for predictions
+# Log the values in the "Softmax" tensor with label "probabilities"
+tensors_to_log = {"probabilities": "softmax_tensor",
+                "classes": "predication_classes"}
+logging_hook = tf.train.LoggingTensorHook(
+  tensors=tensors_to_log, every_n_iter=50)
+
+# Train the model
+train_input_fn = tf.estimator.inputs.numpy_input_fn(
+  x={"x": train_data},
+  y=train_labels,
+  batch_size=2,
+  num_epochs=2,
+  shuffle=True)
+action_classifier.train(
+  input_fn=train_input_fn,
+  steps=10, #20000
+  hooks=[logging_hook])
+
+# Evaluate the model by training data
+eval_Tr_input_fn = tf.estimator.inputs.numpy_input_fn(
+  x={"x": train_data},
+  y=train_labels,
+  batch_size=32,
+  num_epochs=2,
+  shuffle=True)
+eval_Tr_results = action_classifier.evaluate(input_fn=eval_Tr_input_fn)
+print("Evaluate Training data:", eval_Tr_results)
+
+# Evaluate the model by evaluating data
+eval_input_fn = tf.estimator.inputs.numpy_input_fn(
+  x={"x": eval_data},
+  y=eval_labels,
+  batch_size=32,
+  num_epochs=2,
+  shuffle=True)
+eval_results = action_classifier.evaluate(input_fn=eval_input_fn)
+print("Evaluate Evaluating data:",eval_results)
+
+# Testing the model by filmed video.
+test_input_fn = tf.estimator.inputs.numpy_input_fn(
+  x={"x": test_data},
+  y=test_labels,
+  batch_size=1,
+  num_epochs=2,
+  shuffle=True)
+test_results = action_classifier.evaluate(input_fn=test_input_fn)
+print("Evaluate Testing data:",test_results)
+
+
+# The shape of each layer in CNN model
+#for tmp in  action_classifier.get_variable_names():
+#    print(np.shape(action_classifier.get_variable_value(name=tmp)))
+
+
+#if __name__ == "__main__":
+#  tf.app.run()
