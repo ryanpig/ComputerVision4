@@ -46,7 +46,6 @@ def kfold_dataset_gen():
     # Read data and labeling
     traindata, test_d = readData()
     return traindata
-
 def readData():
     # Get file lists from both training and testing folders
     gTrainFilters = './Data/training/*.*'

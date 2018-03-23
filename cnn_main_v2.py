@@ -198,6 +198,7 @@ if Flag_Cross_Validation == True:
         count += 1
     print("Average Acc:", sum(total_acc) / len(total_acc))
 
+
 # Long 2500 steps Training
 Flag_Long_Training = False
 
