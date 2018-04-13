@@ -3,9 +3,10 @@
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import KFold
-from readfunc_v2_optical import single_dataset_gen
-from readfunc_v2_optical import examples
-from readfunc_v2_optical import kfold_dataset_gen
+from readfunc_v2_dualstr import single_dataset_gen
+from readfunc_v2_dualstr import examples
+from readfunc_v2_dualstr import kfold_dataset_gen
+from readfunc_v2_dualstr import  dualFeature
 from Visualize import plot_acc_bar
 from Visualize import plot_acc_loss
 
@@ -32,12 +33,14 @@ def eval_confusion_matrix(labels, predictions):
 def cal_p_r_fscore(conf):
     FP = np.sum(conf, axis=0) - np.diag(conf)
     FN = np.sum(conf, axis=1) - np.diag(conf)
-    TP = np.diag(conf)
+    TP = np.sum(np.diag(conf))
     precision = TP / (TP + FP)
     recall = TP / (TP + FN)
     print("Precision:", precision)
     print("Recall:", recall)
-    fscore = 2 * precision * recall / (precision + recall)
+    p = np.sum(precision) / 5.0
+    r = np.sum(recall) / 5.0
+    fscore = 2 * p * r / (p + r)
     print("F-Score:", fscore)
 def conv2d(inputs, filters, ks, pad):
 
@@ -51,9 +54,12 @@ def conv2d(inputs, filters, ks, pad):
 
 # CNN model function
 def cnn_model_fn(features, labels, mode):
+  print("feature1 shape:" + str(np.shape(features["x1"])))
+  print("feature2 shape:" + str(np.shape(features["x2"])))
 
-  #  Motion input (Optical Flow)
-  input_in1 = tf.reshape(features["x1"], [-1, 120, 120, 20])
+  #  Spatial input (RGB image)
+  input_in1 = tf.reshape(features["x1"], [-1, 120, 120, 3])
+  #tf.cast(input_in1,tf.float32)
   #conv1_in1 = conv2d(input_in1, 32, [5, 5], "Same") #[5,5,20]
   conv1_in1 = tf.layers.conv2d(input_in1, 32,[5, 5], padding="Same", activation=tf.nn.relu)
   pool1_in1 = tf.layers.max_pooling2d(inputs=conv1_in1, pool_size=[2, 2], strides=2)
@@ -66,9 +72,9 @@ def cnn_model_fn(features, labels, mode):
   logits_in1 = tf.layers.dense(inputs=dropout_in1, units=5)
   prob_in1 = tf.nn.softmax(logits_in1, name="softmax_tensor_in1")
 
-
-  #  Spatial input (RGB image)
+  #  Motion input (Optical Flow)
   input_in2 = tf.reshape(features["x2"], [-1, 120, 120, 20])
+  #tf.cast(input_in2,tf.float32)
     #conv1_in2 = conv2d(input_in2, 32, [5, 5], "Same")
   conv1_in2 = tf.layers.conv2d(input_in2, 32,[5, 5], padding="Same", activation=tf.nn.relu)
   pool1_in2 = tf.layers.max_pooling2d(inputs=conv1_in2, pool_size=[2, 2], strides=2)
@@ -84,13 +90,13 @@ def cnn_model_fn(features, labels, mode):
   print([x.name for x in tf.global_variables()])
 
 
-  # Last Fusion
+  # Late Fusion
   #logits = tf.divide(tf.add(logits_in1,logits_in2), 2.0)
   score_avg = tf.divide(tf.add(prob_in1,prob_in2),2.0, "softmax_tensor")
   print("Score_avg:")
   print(tf.shape(score_avg))
   print(np.shape(score_avg))
-  # classified by the averaging of probabilities (softmax) or the averaging of logits
+  # classified by the averaging of probabilities (softmax)
   # axis 1 -> 0, input: logits -> score_avg
   predictions = {
       "classes": tf.argmax(input=score_avg, axis=1,name="predication_classes"),
@@ -113,7 +119,7 @@ def cnn_model_fn(features, labels, mode):
 
   # Configure the Training Op (for TRAIN mode)
   if mode == tf.estimator.ModeKeys.TRAIN:
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.07)
     train_op = optimizer.minimize(
         loss=loss,
         global_step=tf.train.get_global_step())
@@ -132,15 +138,15 @@ def cnn_model_fn(features, labels, mode):
 # Generate input_fn for training, evaluating
 def gen_input_fn(features, labels, bs=32, ep=2, sh=True):
     input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": features},
+        x={"x1": features},
         y=labels,
         batch_size=bs,
         num_epochs=ep,
         shuffle=sh)
     return input_fn
-def gen_input_fn_dual(features, labels, bs=32, ep=2, sh=True):
+def gen_input_fn_dual(feature1,feature2, labels, bs=32, ep=2, sh=True):
     input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x1": features, "x2":features},
+        x={"x1": feature1, "x2": feature2},
         y=labels,
         batch_size=bs,
         num_epochs=ep,
@@ -187,12 +193,21 @@ def gen_dataset(train_ratio, tr_eval_ratio):
     print("Get Testing data:", np.shape(test_data))
     print(train_labels)
     return train_data, train_labels, eval_data, eval_labels, test_data, test_labels
-
+def convert_two_features(data):
+    n = len(data)
+    f1 = []
+    f2 = []
+    for i in range(n):
+        f1.append(data[i].images1)
+        f2.append(data[i].images2)
+    f1 = np.asarray(f1,dtype=np.float32)
+    f2 = np.asarray(f2,dtype=np.float32)
+    return f1, f2
 # --------------- Main Processing ----------------
 # Create the Estimator
 print("Estimator Creating...")
 action_classifier = tf.estimator.Estimator(
-  model_fn=cnn_model_fn, model_dir="/tmp/cnn_model_two4")
+  model_fn=cnn_model_fn, model_dir="/tmp/cnn_model_two9")
   #model_fn = cnn_model_fn, model_dir = "/tmp/cnn_model_HOG4")
   #model_fn=cnn_model_fn, model_dir="/tmp/cnn_model_data_aug")
 
@@ -212,6 +227,7 @@ Flag_Once_Training = True
 Flag_Once_Evaluation = True
 
 # Configuration for testing
+Flag_Two_Stream = True
 Flag_Cross_Validation_Test = False
 Flag_Reduce_Training_Test = False
 Flag_Long_Training = False
@@ -219,11 +235,21 @@ Flag_Long_Training = False
 # Load training, evaluation, and testing data
 if Flag_Once_Generate_Dateset == True:
     train_data, train_labels, eval_data, \
-    eval_labels, test_data, test_labels = gen_dataset(train_ratio=0.8,tr_eval_ratio=0.2)
+    eval_labels, test_data, test_labels = gen_dataset(train_ratio=0.99,tr_eval_ratio=0.1)
 
 # Train the model
 if Flag_Once_Training == True:
-    train_input_fn = gen_input_fn_dual(train_data, train_labels, bs=32, ep=5, sh=False)
+    if Flag_Two_Stream == True:
+        # Get dual features
+        f1,f2 = convert_two_features(train_data)
+        train_input_fn = gen_input_fn_dual(feature1=f1, feature2=f2, labels=train_labels, bs=32, ep=1, sh=True)
+    else:
+        train_input_fn = gen_input_fn(train_data,train_labels,bs=32,ep=1,sh=True)
+    print("Training classifier...")
+    print("Feature1" + str(np.shape(f1)))
+    print("Feature2" + str(np.shape(f2)))
+    print("label" + str(np.shape(train_labels)))
+
     action_classifier.train(
       input_fn=train_input_fn,
       steps=400, #20000
@@ -231,8 +257,16 @@ if Flag_Once_Training == True:
 
 # Evaluation both training and evaluation data once
 if Flag_Once_Evaluation == True:
-    eval_Tr_input_fn = gen_input_fn_dual(train_data, train_labels, bs=32, ep=1, sh=False)
-    eval_input_fn = gen_input_fn_dual(eval_data, eval_labels, bs=32, ep=1, sh=False)
+    if Flag_Two_Stream == True:
+        # Get dual features
+        f1,f2 = convert_two_features(train_data)
+        f3,f4 = convert_two_features(eval_data)
+        eval_Tr_input_fn = gen_input_fn_dual(feature1=f1, feature2=f2, labels=train_labels, bs=32, ep=1, sh=False)
+        eval_input_fn = gen_input_fn_dual(feature1=f3, feature2=f4, labels=eval_labels, bs=32, ep=1, sh=False)
+    else:
+        eval_Tr_input_fn = gen_input_fn(train_data, train_labels, bs=32, ep=1, sh=False)
+        eval_input_fn = gen_input_fn(eval_data, eval_labels, bs=32, ep=1, sh=False)
+
     acc_tr, acc_eval = evaluate_print_result(action_classifier,eval_Tr_input_fn, eval_input_fn )
 
 # Cross Validation

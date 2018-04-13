@@ -15,6 +15,7 @@ import cv2
 import matplotlib.pyplot as plt
 from data_aug import tf_distort_images
 from sklearn.model_selection import train_test_split
+#from sklearn.preprocessing import normalize
 from enum import Enum
 #sklearn.preprocessing.
 
@@ -53,8 +54,8 @@ class examples:
                 #self.images[i].images2 = np.zeros([120, 120, 20], dtype=np.float32)
 class dualFeature:
     def __init__(self):
-        self.images1 = np.zeros([120,120,3], dtype=np.float32)
-        self.images2 = np.zeros([120,120,20], dtype=np.float32)
+        self.images1 = np.zeros([120,120,3], dtype=np.float32) #Spatial feature
+        self.images2 = np.zeros([120,120,20], dtype=np.float32)#Temporal feature, 10 frames * (u,v)
 def normalize(arr):
     if arr.max() > 1.0:
         arr/=255.0
@@ -128,7 +129,7 @@ def labeling(filelist, feature_type):
             #examples_d.images[i] = cv2.cvtColor(cv2.imread(filelist[i]),cv2.COLOR_BGR2RGB)
             examples_d.images[i] = plt.imread(filelist[i])
             # Normalization
-            normalize(examples_d.images[i])
+            #normalize(examples_d.images[i])
 
         elif feature_type == FeatureType.OPTICAL:
             # HSV -> H,V -> optical flow U,V
@@ -168,12 +169,16 @@ def labeling(filelist, feature_type):
                 path = dir_train + filename + '.jpg'
             elif dir_type == 'testing':
                 path = dir_test + filename + '.jpg'
-            examples_d.images[i].images1 = plt.imread(path)
-            print(examples_d.images[i].images1)
-            print(np.shape(examples_d.images))
-            img = np.ones(shape=[120,120,3],dtype=np.float32)
-
-            normalize(img) ##GG
+            examples_d.images[i].images1 =  np.asarray(plt.imread(path),dtype=np.float32)
+            #print(examples_d.images[i].images1)
+            print("Spatial feature:")
+            #print(np.shape(examples_d.images))
+            #x = np.random.rand(1000) * 10
+            #norm1 = x / np.linalg.norm(x)
+            #norm2 = normalize(x[:, np.newaxis], axis=0).ravel()
+            #np.all(norm1 == norm2)
+            normalize(examples_d.images[i].images1)
+            #print(np.sum(examples_d.images[i].images1))
 
             #Motion Features (Optical flow) (120,120,20)
             dir_train = './Data\\training_optical_multi\\'
@@ -182,8 +187,8 @@ def labeling(filelist, feature_type):
                 # ./Data/training_optical\\BrushingTeeth_g01_c01_of.jpg
                 filename = filelist[i].split('_of')[0].split('\\')[1] #BrushingTeeth_g01_c01
                 dir_type = filelist[i].split('Data/')[1].split('_')[0] #training
-                print(filename)
-                print(dir_type)
+               # print(filename)
+               # print(dir_type)
                 if dir_type == 'training':
                     path = dir_train + filename + '_of_' + str(n) + '.jpg'
                 elif dir_type == 'testing':
@@ -193,8 +198,9 @@ def labeling(filelist, feature_type):
                 # tmp = np.zeros(shape=(120,120,2))
                 examples_d.images[i].images2[..., 2 * n] = img[..., 0]
                 examples_d.images[i].images2[..., (2 * n + 1)] = img[..., 2]
-                normalize(examples_d.images[i].images2)
-
+                normalize(np.asarray(examples_d.images[i].images2,dtype=np.float32))
+            print("Temporal feature:")
+            print(np.shape(examples_d.images))
     return examples_d
 def dataDivision(data, division_ratio, feature_type):
     total_len = len(data.labels)
@@ -226,7 +232,6 @@ def data_augmentation(train_d):
     train_d.images = np.concatenate((train_d.images, distorted_images), axis=0)
     train_d.labels = np.concatenate((train_d.labels, train_d.labels), axis=0)
     return train_d
-
 def debug():
     train1,eval1, test1 = single_dataset_gen(train_usage_ratio=0.03,train_eval_ratio=0.2)
     train_data = train1.images
@@ -266,8 +271,13 @@ def debug_dual():
     print(train_data[0].images1)
     print(train_data[0].images2)
     print(np.shape(train_data))
+    print(np.shape(train_data[0].images1))
+    print(np.shape(train_data[0].images2))
+    print(np.sum(train_data[0].images1))
+    print(np.sum(train_data[0].images2))
+
     if Flag_Visual == True:
-        for i in range(5):
+        for i in range(3):
             fig, [(ax1, ax2, ax3), (ax4, ax5, ax6)] = plt.subplots(2, 3, figsize=(8, 4), sharex=True, sharey=True)
             ax1.imshow(train_data[i].images1)
             ax2.imshow(train_data[i+1].images1)  # For data aug. image.
@@ -276,9 +286,9 @@ def debug_dual():
             ax5.imshow(test_data[i].images1)
             ax6.imshow(test_data[i + 1].images1)
             str1 = "count" + str(i)
-            plt.title(str)
+            plt.title(str1)
             plt.show()
 # data = kfold_dataset_gen()
 
 #debug()
-debug_dual()
+#debug_dual()
