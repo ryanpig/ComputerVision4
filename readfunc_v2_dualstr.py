@@ -15,9 +15,8 @@ import cv2
 import matplotlib.pyplot as plt
 from data_aug import tf_distort_images
 from sklearn.model_selection import train_test_split
-#from sklearn.preprocessing import normalize
 from enum import Enum
-#sklearn.preprocessing.
+
 
 class FeatureType(Enum):
     RGB = 1
@@ -60,56 +59,60 @@ def normalize(arr):
     if arr.max() > 1.0:
         arr/=255.0
     return arr
-def single_dataset_gen(train_usage_ratio=Division_ratio, train_eval_ratio=Training_usage_ratio):
-    Training_usage_ratio = train_usage_ratio
-    Division_ratio = train_eval_ratio
+def single_dataset_gen(train_test_ratio, train_eval_ratio,feature_type):
+    #Train_test_ratio = train_test_ratio
+    #Division_ratio = train_eval_ratio
 
     # Read data and labeling
-    traindata, test_d = readData(Global_Feature_Type, Training_usage_ratio)
+    traindata,test_d, test_film = readData(feature_type, train_test_ratio)
     # Divide data into training and evaluating data
-    train_d, eval_d = dataDivision(traindata, Division_ratio, Global_Feature_Type)
+    train_d, eval_d = dataDivision(traindata, train_eval_ratio, feature_type)
     # Data Augmentation (Double training data:496 -> 992)
-    if Flag_data_aug == True:
+    if Flag_data_aug:
         train_d = data_augmentation(train_d)
-    print("Data Usage Ratio:", Training_usage_ratio,
-          "Train/Eval Ratio", Division_ratio,
+    # Display result
+    print("Generate Feature type:",str(feature_type))
+    print("Train/Test Usage Ratio:", train_test_ratio,
+          "Train/Eval Ratio", train_eval_ratio,
           "Training examples:", len(train_d.labels),
           "Evaluate examples:", len(eval_d.labels),
-          "Testing examples:", len(test_d.labels))
-    return train_d, eval_d, test_d
+          "Testing_Hold examples:", len(test_d.labels),
+          "Testing_Film examples:", len(test_film.labels))
+    return train_d, eval_d, test_d, test_film
 
 # Only return train & eval data.
 def kfold_dataset_gen(feature_type, train_eval_ratio):
     # Read data and labeling
     traindata, test_d = readData(feature_type, train_eval_ratio=train_eval_ratio)
     return traindata
-def readData(feature_type, train_eval_ratio):
+def readData(feature_type, train_test_ratio):
     # Get file lists from both training and testing folders
     if feature_type == feature_type.RGB:
         gTrainFilters = './Data/training/*.*'
-        gTestFilters = './Data/testing/*.*'
+        gFilmFilters = './Data/testing/*.*'
     elif feature_type == feature_type.OPTICAL:
         gTrainFilters = './Data/training_optical/*.*'
-        gTestFilters = './Data/testing_optical/*.*'
-    elif feature_type == feature_type.OPTICAL_MULTI: #only for filelist
+        gFilmFilters = './Data/testing_optical/*.*'
+    elif feature_type == feature_type.OPTICAL_MULTI: #only as a file list to retrieve multi OFs
         gTrainFilters = './Data/training_optical/*.*'
-        gTestFilters = './Data/testing_optical/*.*'
-    elif feature_type == feature_type.Dual: #only for filelist
+        gFilmFilters = './Data/testing_optical/*.*'
+    elif feature_type == feature_type.Dual: #only as file list to retrieve multi OFs
         gTrainFilters = './Data/training_optical/*.*'
-        gTestFilters = './Data/testing_optical/*.*'
+        gFilmFilters = './Data/testing_optical/*.*'
 
     filelist = glob.glob(gTrainFilters)
-    filelist_Test = glob.glob(gTestFilters)
+    filelist_film = glob.glob(gFilmFilters)
     print("Start to read training data:", gTrainFilters,
-          "Testing data:", gTestFilters )
+          "Filmed data:", gFilmFilters )
     # labeling and reading features
 
-    filelist_No, filelist = train_test_split(filelist, test_size=train_eval_ratio,
+    filelist_Hold, filelist = train_test_split(filelist, test_size=train_test_ratio,
                          shuffle=True)
     data = labeling(filelist, feature_type)
-    test_d = labeling(filelist_Test[0:10], feature_type)
+    test_hold = labeling(filelist_Hold, feature_type)
+    test_film = labeling(filelist_film, feature_type)
 
-    return data, test_d
+    return data, test_hold, test_film
 
 # labeling based on the file name.
 def labeling(filelist, feature_type):
@@ -129,17 +132,14 @@ def labeling(filelist, feature_type):
             #examples_d.images[i] = cv2.cvtColor(cv2.imread(filelist[i]),cv2.COLOR_BGR2RGB)
             examples_d.images[i] = plt.imread(filelist[i])
             # Normalization
-            #normalize(examples_d.images[i])
-
+            normalize(np.asarray(examples_d.images[i], dtype=np.float32))
         elif feature_type == FeatureType.OPTICAL:
             # HSV -> H,V -> optical flow U,V
             img = cv2.cvtColor(cv2.imread(filelist[i]),cv2.COLOR_BGR2HSV)
             examples_d.images[i][...,0] = img[...,0]
             examples_d.images[i][...,1] = img[...,2]
-            # Using 3-ch
-               #examples_d.images[i] = plt.imread(filelist[i])
             # Normalization
-            normalize(examples_d.images[i])
+            normalize(np.asarray(examples_d.images[i], dtype=np.float32))
         elif feature_type == FeatureType.OPTICAL_MULTI:
             dir_train = './Data\\training_optical_multi\\'
             dir_test = './Data\\testing_optical_multi\\'
@@ -148,7 +148,7 @@ def labeling(filelist, feature_type):
                 filename = filelist[i].split('_of')[0].split('\\')[1]
                 dir_type = filelist[i].split('Data/')[1].split('_')[0]
                 print(filename)
-                print(dir_type)
+                #print(dir_type)
                 if dir_type == 'training':
                     path = dir_train + filename + '_of_' + str(n) + '.jpg'
                 elif dir_type == 'testing':
@@ -158,7 +158,8 @@ def labeling(filelist, feature_type):
                 #tmp = np.zeros(shape=(120,120,2))
                 examples_d.images[i][..., 2*n] = img[..., 0]
                 examples_d.images[i][..., (2*n+1)] = img[..., 2]
-                normalize(examples_d.images[i])
+                # Normalization
+                normalize(np.asarray(examples_d.images[i], dtype=np.float32))
         elif feature_type == FeatureType.Dual:
             #Spatio features (RGB) (120,120,3)
             filename = filelist[i].split('_of')[0].split('\\')[1]  # BrushingTeeth_g01_c01
@@ -170,15 +171,8 @@ def labeling(filelist, feature_type):
             elif dir_type == 'testing':
                 path = dir_test + filename + '.jpg'
             examples_d.images[i].images1 =  np.asarray(plt.imread(path),dtype=np.float32)
-            #print(examples_d.images[i].images1)
-            print("Spatial feature:")
-            #print(np.shape(examples_d.images))
-            #x = np.random.rand(1000) * 10
-            #norm1 = x / np.linalg.norm(x)
-            #norm2 = normalize(x[:, np.newaxis], axis=0).ravel()
-            #np.all(norm1 == norm2)
+
             normalize(examples_d.images[i].images1)
-            #print(np.sum(examples_d.images[i].images1))
 
             #Motion Features (Optical flow) (120,120,20)
             dir_train = './Data\\training_optical_multi\\'
@@ -199,8 +193,8 @@ def labeling(filelist, feature_type):
                 examples_d.images[i].images2[..., 2 * n] = img[..., 0]
                 examples_d.images[i].images2[..., (2 * n + 1)] = img[..., 2]
                 normalize(np.asarray(examples_d.images[i].images2,dtype=np.float32))
-            print("Temporal feature:")
-            print(np.shape(examples_d.images))
+            #print("Temporal feature:")
+            #print(np.shape(examples_d.images))
     return examples_d
 def dataDivision(data, division_ratio, feature_type):
     total_len = len(data.labels)
@@ -260,31 +254,42 @@ def debug():
             plt.title(str)
             plt.show()
 def debug_dual():
-    train1, eval1, test1 = single_dataset_gen(train_usage_ratio=0.03, train_eval_ratio=0.2)
+    feature_type1 = FeatureType.RGB
+    train1, eval1, test1, test_film = single_dataset_gen(train_test_ratio=0.8, train_eval_ratio=0.1,feature_type=feature_type1)
     train_data = train1.images
     train_labels = train1.labels
     eval_data = eval1.images
     eval_labels = eval1.labels
     test_data = test1.images
     test_labels = test1.labels
+    test_film_data = test_film.images
+    test_film_labels = test_film.labels
     print("train------------")
-    print(train_data[0].images1)
-    print(train_data[0].images2)
-    print(np.shape(train_data))
-    print(np.shape(train_data[0].images1))
-    print(np.shape(train_data[0].images2))
-    print(np.sum(train_data[0].images1))
-    print(np.sum(train_data[0].images2))
+    #print(train_data[0].images1)
+    #print(train_data[0].images2)
+    #print(np.shape(train_data))
+    #print(np.shape(train_data[0].images1))
+    #print(np.shape(train_data[0].images2))
+    #print(np.sum(train_data[0].images1))
+    #print(np.sum(train_data[0].images2))
 
-    if Flag_Visual == True:
+    if Flag_Visual == True: # only support RGB & Dual(RGB)
         for i in range(3):
             fig, [(ax1, ax2, ax3), (ax4, ax5, ax6)] = plt.subplots(2, 3, figsize=(8, 4), sharex=True, sharey=True)
-            ax1.imshow(train_data[i].images1)
-            ax2.imshow(train_data[i+1].images1)  # For data aug. image.
-            ax3.imshow(eval_data[i].images1)
-            ax4.imshow(eval_data[i + 1].images1)
-            ax5.imshow(test_data[i].images1)
-            ax6.imshow(test_data[i + 1].images1)
+            if feature_type1 == FeatureType.Dual:
+                ax1.imshow(train_data[i].images1)
+                ax2.imshow(train_data[i+1].images1)  # For data aug. image.
+                ax3.imshow(eval_data[i].images1)
+                ax4.imshow(eval_data[i + 1].images1)
+                ax5.imshow(test_data[i].images1)
+                ax6.imshow(test_film_data[i].images1)
+            else:
+                ax1.imshow(train_data[i])
+                ax2.imshow(train_data[i + 1])  # For data aug. image.
+                ax3.imshow(eval_data[i])
+                ax4.imshow(eval_data[i + 1])
+                ax5.imshow(test_data[i])
+                ax6.imshow(test_film_data[i])
             str1 = "count" + str(i)
             plt.title(str1)
             plt.show()

@@ -3,9 +3,9 @@ import numpy as np
 import glob
 import random
 
+# Goal: Generate optical images from both UCF101 videos and my own filmed video.
+# Decide to generate 10 optical flow images from UCF101 or filmed video.
 
-
-# Choose to generate optical flow images for either training or testing
 Flag_training_or_test = False
 if Flag_training_or_test == True:
     #globFilters = ['./Data/JumpingJack/*.*',]
@@ -68,6 +68,7 @@ for k in range(len(globFilters)):
                 fm_resize = cv2.resize(fm2, (120, 120))
                 fm_resize_of = cv2.resize(bgr, (120, 120))
                 #ret2 = cv2.imwrite(path, fm_resize)
+                # Write single optical flow into jpg image.
                 ret3 = cv2.imwrite(path_of, fm_resize_of)
                 prvs = next
                 if ret3 == True:
