@@ -6,6 +6,7 @@ from sklearn.model_selection import KFold
 from readfunc_v2_dualstr import single_dataset_gen
 from readfunc_v2_dualstr import examples
 from readfunc_v2_dualstr import kfold_dataset_gen
+from readfunc_v2_dualstr import data_augmentation
 from Visualize import plot_acc_bar
 from Visualize import plot_acc_loss
 from enum import Enum
@@ -62,16 +63,12 @@ def cnn_model_fn(features, labels, mode):
   print(np.shape(input_in1))
   # 1st CNN Tower
   conv1_in1 = tf.layers.conv2d(input_in1, 32,[5, 5], padding="Same", activation=tf.nn.relu)
-  print(np.shape(conv1_in1))
   pool1_in1 = tf.layers.max_pooling2d(inputs=conv1_in1, pool_size=[2, 2], strides=2)
   conv2_in1 = tf.layers.conv2d(pool1_in1, 64, [5, 5], padding="Same", activation=tf.nn.relu)
-  print(np.shape(conv2_in1))
   pool2_in1 = tf.layers.max_pooling2d(inputs=conv2_in1, pool_size=[2, 2], strides=2)
   pool2_flat_in1 = tf.reshape(pool2_in1, [-1, 30 * 30 * 64 * 1])
-  print(np.shape(pool2_flat_in1))
   dense_in1 = tf.layers.dense(inputs=pool2_flat_in1, units=128, activation=tf.nn.relu)
-  print(np.shape(dense_in1))
-  dropout_in1 = tf.layers.dropout(inputs=dense_in1, rate=0.4, training=mode == tf.estimator.ModeKeys.TRAIN)
+  dropout_in1 = tf.layers.dropout(inputs=dense_in1, rate=drop_ratio_global, training=mode == tf.estimator.ModeKeys.TRAIN)
   logits_in1 = tf.layers.dense(inputs=dropout_in1, units=5)
   prob_in1 = tf.nn.softmax(logits_in1, name="softmax_tensor_in1")
 
@@ -85,7 +82,7 @@ def cnn_model_fn(features, labels, mode):
       pool2_in2 = tf.layers.max_pooling2d(inputs=conv2_in2, pool_size=[2, 2], strides=2)
       pool2_flat_in2 = tf.reshape(pool2_in2, [-1, 30 * 30 * 64 * 1])
       dense_in2 = tf.layers.dense(inputs=pool2_flat_in2, units=128, activation=tf.nn.relu)
-      dropout_in2 = tf.layers.dropout(inputs=dense_in2, rate=0.4, training=mode == tf.estimator.ModeKeys.TRAIN)
+      dropout_in2 = tf.layers.dropout(inputs=dense_in2, rate=drop_ratio_global, training=mode == tf.estimator.ModeKeys.TRAIN)
       logits_in2 = tf.layers.dense(inputs=dropout_in2, units=5)
       prob_in2 = tf.nn.softmax(logits_in2, name="softmax_tensor_in2")
 
@@ -112,7 +109,7 @@ def cnn_model_fn(features, labels, mode):
 
   # Configure the Training Op (for TRAIN mode)
   if mode == tf.estimator.ModeKeys.TRAIN:
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.07)
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_global)
     train_op = optimizer.minimize(
         loss=loss,
         global_step=tf.train.get_global_step())
@@ -156,7 +153,7 @@ def kfold_cross_validation(data):
         evaluate_d.images = data.images[eval_ind]
         evaluate_d.labels = data.labels[eval_ind]
         return train_d, evaluate_d
-
+# display training and evaluating dataset result
 def evaluate_tr_ev_print_result(classifier, input_fn_tr, input_fn_eval):
     # For Training data
     eval_tr_results = classifier.evaluate(input_fn=input_fn_tr)
@@ -172,22 +169,24 @@ def evaluate_tr_ev_print_result(classifier, input_fn_tr, input_fn_eval):
     acc_tr1 = eval_tr_results['accuracy']
     acc_eval1 = eval_eval_results['accuracy']
     return acc_tr1, acc_eval1
+# display testing dataset evaluation result
 def evaluate_test_print_result(classifier, input_fn):
     eval_te_results = classifier.evaluate(input_fn=input_fn)
     print("Evaluate Testing data result:", eval_te_results)
     cal_p_r_fscore(eval_te_results['conf_matrix'])
     acc_te = eval_te_results['accuracy']
     return acc_te
+# display filmed dataset evaluation result
 def evaluate_film_print_result(classifier, input_fn):
     eval_film_results = classifier.evaluate(input_fn=input_fn)
     print("Evaluate Film data result:", eval_film_results)
     cal_p_r_fscore(eval_film_results['conf_matrix'])
     acc_te_film = eval_film_results['accuracy']
     return acc_te_film
-
-def gen_dataset(tr_te_ratio1, tr_eval_ratio1, feature_type):
+# The main function to generate dataset by calling the single_dataset_gen in readfunc_v2_dualstr.py
+def gen_dataset(tr_te_ratio, tr_eval_ratio, feature_type, flat_data_aug):
     print("Generate single dataset..")
-    train1,eval1, test1, test_film = single_dataset_gen(tr_te_ratio1, tr_eval_ratio1, feature_type)
+    train1,eval1, test1, test_film = single_dataset_gen(tr_te_ratio, tr_eval_ratio, feature_type,flat_data_aug )
     train_data1 = train1.images
     train_labels1 = train1.labels
     eval_data1 = eval1.images
@@ -214,48 +213,114 @@ def convert_two_features(data):
     f1 = np.asarray(f1,dtype=np.float32)
     f2 = np.asarray(f2,dtype=np.float32)
     return f1, f2
+# mapping topology type to feature type and set the directory path.
+def presetting(topologyType, model_index):
+    if topologyType == TopologyType.DurlCNN_RGB_OFs:
+        flag_two_stream = True
+    else:
+        flag_two_stream = False
+
+    if topologyType == TopologyType.SingleCNN_RGB:
+        feature_type = FeatureType.RGB
+        model_dir2 = "/tmp/cnn_model_RGB_" + str(model_index)
+    elif topologyType == TopologyType.SingleCNN_OF:
+        feature_type = FeatureType.OPTICAL
+        model_dir2 = "/tmp/cnn_model_OF_" + str(model_index)
+    elif topologyType == TopologyType.SingleCNN_OF_MULTI:
+        feature_type = FeatureType.OPTICAL_MULTI
+        model_dir2 = "/tmp/cnn_model_OFs_" + str(model_index)
+    elif topologyType == TopologyType.DurlCNN_RGB_OFs:
+        feature_type = FeatureType.Dual
+        model_dir2 = "/tmp/cnn_model_Dual_" + str(model_index)
+    return feature_type, model_dir2, flag_two_stream
+# Combined all simple action
+def all_in_one_test(topology_type, model_index, training_counts, tr_te_ratio, tr_ev_ratio, batch_size):
+    feature_type1, model_dir1, Flag_Two_Stream = presetting(topology_type, model_index)
+    action_classifier = tf.estimator.Estimator(model_fn=cnn_model_fn, model_dir=model_dir1)
+    # Generate Dataset
+    train_data, train_labels, eval_data, \
+    eval_labels, test_data, test_labels, \
+    test_film_data, test_film_labels= gen_dataset(tr_te_ratio,tr_ev_ratio, feature_type=feature_type1,flat_data_aug=False)
+    # Training the model
+    train_input_fn = gen_input_fn_wrapper(train_data, train_labels, bs=batch_size, ep=1, sh=True,
+                                          dualfeature=Flag_Two_Stream)
+    eval_Tr_input_fn = gen_input_fn_wrapper(train_data, train_labels, bs=32, ep=1, sh=True,dualfeature=Flag_Two_Stream)
+    eval_Ev_input_fn = gen_input_fn_wrapper(eval_data, eval_labels, bs=32, ep=1, sh=True, dualfeature=Flag_Two_Stream)
+
+    # For visualization
+    #acc_train_arr = []
+    #acc_eval_arr = []
+    #loss_train_arr = []
+
+    print("Training classifier...")
+
+    for i in range(training_counts):
+        action_classifier.train(
+            input_fn=train_input_fn,
+            steps=1000,  # 20000
+            hooks=[logging_hook])
+    #    acc_tr, acc_eval, loss_tr = evaluate_tr_ev_print_result(action_classifier, eval_Tr_input_fn, eval_Ev_input_fn)
+    #    loss_train_arr.append(loss_tr)
+    #    acc_train_arr.append(acc_tr)
+    #    acc_eval_arr.append(acc_eval)
+
+    # For visualization
+    # print(loss_train_arr)
+    # print(acc_train_arr)
+    # print(acc_eval_arr)
+    # plot_acc_loss(acc_train_arr, acc_eval_arr, loss_train_arr)
+
+    # Evaluation of training data & evaluating data
+    acc_tr, acc_eval = evaluate_tr_ev_print_result(action_classifier, eval_Tr_input_fn, eval_Ev_input_fn)
+    # Test unseen test data
+    eval_Te_input_fn = gen_input_fn_wrapper(test_data, test_labels, bs=32, ep=1, sh=True, dualfeature=Flag_Two_Stream)
+    acc_te = evaluate_test_print_result(action_classifier, eval_Te_input_fn)
+    # Test filmed data
+    eval_Film_input_fn = gen_input_fn_wrapper(test_film_data, test_film_labels, bs=32, ep=1, sh=True,dualfeature=Flag_Two_Stream)
+    acc_film = evaluate_film_print_result(action_classifier, eval_Film_input_fn)
+    print("Accuracy for Training/Evaluating/Testing/Filmed data:", acc_tr,acc_eval,acc_te,acc_film)
+    acc = []
+    acc.append(acc_eval)
+    acc.append(acc_te)
+    acc.append(acc_film)
+    return acc
 
 # --------------- Main Processing ----------------
 #--------------- Configuration -------------------
 # Choose topology
-#topologyType = TopologyType.SingleCNN_RGB
-topologyType = TopologyType.SingleCNN_OF
+topologyType = TopologyType.SingleCNN_RGB
+#topologyType = TopologyType.SingleCNN_OF
 #topologyType = TopologyType.SingleCNN_OF_MULTI
 #topologyType = TopologyType.DurlCNN_RGB_OFs
 
-# One step action
-Flag_Once_Generate_Dateset = True
-Flag_Once_Training = True
-Flag_Once_Evaluation = True
-Flag_Once_Testing = True
-Flag_Once_Testing_Film = True
-# Combined action
-Flag_Cross_Validation_Test = False
-Flag_Reduce_Training_Test = False
-Flag_Long_Training = False
-# Basic Configuration
-tr_te_ratio = 0.4 # Training data v.s. Testing data(Hold)
-tr_ev_ratio = 0.1 # In Training data, Training v.s. Evaluate
+# One step action set
+Flag_Once_Generate_Dateset = False
+Flag_Once_Training = False
+Flag_Once_Evaluation = False
+Flag_Once_Testing = False
+Flag_Once_Testing_Film = False
+
+# Multiple action sets (Turn off all one step action!)
+Flag_AllinOne = True  # the action of combining all Once actions.
+Flag_Cross_Validation_Test = False # k-fold , get best model, re-train best w/ whole dataset, testing
+Flag_DataAug_Comparision_Test = False #Four kinds options data augmentation
+Flag_All_Topology_Comparison_Test = False #rgb, OF, OFs, two-stream
+Flag_Paramter_Tuning_Test = False
+# Basic Configuration for Single Action
+tr_te_ratio = 0.8 # Training data v.s. Testing data(Hold)
+tr_ev_ratio = 0.2 # In Training data, Training v.s. Evaluate
 model_dir1 = " "
-model_index = 2
-# Pre-setting
-if topologyType == TopologyType.DurlCNN_RGB_OFs:
-    Flag_Two_Stream = True
+model_index = 0 # Assign arbitrary number in the model path
+# CNN Model parameter
+learning_rate_global = 0.07
+drop_ratio_global = 0.4
+
+# lr = 0.07 (Default)
+# Get features type based on topology type & Set model folder
+if Flag_AllinOne:
+    pass
 else:
-    Flag_Two_Stream = False
-# Choose features based on topology & Set model folder
-if topologyType == TopologyType.SingleCNN_RGB:
-    feature_type1 = FeatureType.RGB
-    model_dir1 = "/tmp/cnn_model_RGB_" + str(model_index)
-elif topologyType == TopologyType.SingleCNN_OF:
-    feature_type1 = FeatureType.OPTICAL
-    model_dir1 = "/tmp/cnn_model_OF_" + str(model_index)
-elif topologyType == TopologyType.SingleCNN_OF_MULTI:
-    feature_type1 = FeatureType.OPTICAL_MULTI
-    model_dir1 = "/tmp/cnn_model_OFs_" + str(model_index)
-elif topologyType == TopologyType.DurlCNN_RGB_OFs:
-    feature_type1 = FeatureType.Dual
-    model_dir1 = "/tmp/cnn_model_Dual_" + str(model_index)
+    feature_type1, model_dir1, Flag_Two_Stream = presetting(topologyType, model_index)
 
 # Create the Estimator
 print("Estimator Creating...")
@@ -274,16 +339,18 @@ logging_hook = tf.train.LoggingTensorHook(
 if Flag_Once_Generate_Dateset:
     train_data, train_labels, eval_data, \
     eval_labels, test_data, test_labels, \
-    test_film_data, test_film_labels= gen_dataset(tr_te_ratio,tr_ev_ratio, feature_type=feature_type1)
+    test_film_data, test_film_labels= gen_dataset(tr_te_ratio,tr_ev_ratio, feature_type=feature_type1,flat_data_aug=False)
 
 # Training the model
 if Flag_Once_Training:
     train_input_fn = gen_input_fn_wrapper(train_data, train_labels, bs=32, ep=1, sh=True, dualfeature=Flag_Two_Stream)
     print("Training classifier...")
-    action_classifier.train(
-      input_fn=train_input_fn,
-      steps=400, #20000
-      hooks=[logging_hook])
+    training_time = 20
+    for i in range(training_time):
+        action_classifier.train(
+          input_fn=train_input_fn,
+          steps=400, #20000
+          hooks=[logging_hook])
 
 # Evaluation of training data & evaluating data
 if Flag_Once_Evaluation:
@@ -300,20 +367,27 @@ if Flag_Once_Testing_Film:
     acc_film = evaluate_film_print_result(action_classifier,eval_Film_input_fn)
 
 # ------------------- Combined Actions -----------------
+# Combined about five once action
+if Flag_AllinOne:
+    topologyType = TopologyType.SingleCNN_RGB
+    acc = all_in_one_test(topologyType, 22, 20, 0.8, 0.2, 32)
 
 # Cross Validation
 if Flag_Cross_Validation_Test:
-    data = kfold_dataset_gen(feature_type='RGB',train_eval_ratio=0.2)
-    kf = KFold(n_splits=10,shuffle=True)
+    feature_type2 = FeatureType.RGB
+    data, test_d, test_film = kfold_dataset_gen(feature_type2,train_test_ratio=0.8)
+    kf = KFold(n_splits=5,shuffle=True)
     count = 0
     total_acc = []
+
     model_dir1 = "/tmp/cnn_model_cv"
-    print("10-fold cross validation starts...")
+    training_times = 25
+    print("5-fold cross validation starts...")
     print("Before spliting:",len(data.labels))
     for tr_ind, ev_ind in kf.split(data.labels):
         print(len(tr_ind),len(ev_ind))
-        tr = examples(len(tr_ind))
-        ev = examples(len(ev_ind))
+        tr = examples(len(tr_ind), feature_type2)
+        ev = examples(len(ev_ind), feature_type2)
         tr.images = data.images[tr_ind]
         tr.labels = data.labels[tr_ind]
         ev.images = data.images[ev_ind]
@@ -325,93 +399,182 @@ if Flag_Cross_Validation_Test:
         train_input_fn = gen_input_fn_wrapper(tr.images, tr.labels, bs=32, ep=1, sh=False, dualfeature=Flag_Two_Stream)
         # Train & Evaluate
         print("Model:", model_dir, "Training start")
-        action_classifier.train(
-            input_fn=train_input_fn, steps=800, hooks=[logging_hook])
+        for i in range(training_times):
+            action_classifier.train(
+                input_fn=train_input_fn, steps=500, hooks=[logging_hook])
+        # Evaluate
         eval_input_fn = gen_input_fn_wrapper(ev.images, ev.labels, bs=32, ep=1, sh=False, dualfeature=Flag_Two_Stream)
         eval_results = action_classifier.evaluate(input_fn=eval_input_fn)
         # Print Result
         print("Evaluate result:", eval_results)
         cal_p_r_fscore(eval_results['conf_matrix'])
         total_acc.append(eval_results['accuracy'])
-        print(ev_ind)
+        #print(ev_ind)
         count += 1
+    ind_best = total_acc.index(max(total_acc))
     print("Average Acc:", sum(total_acc) / len(total_acc))
+    print("Best model No.:",ind_best , "Accuracy:",total_acc[ind_best])
+    # Visualization
     plot_acc_bar(total_acc, 'Cross-Validation')
 
-# Evaluate different size of training dataset
-# Running four kinds of quantity of training examples
-if Flag_Reduce_Training_Test:
-    # four kinds of training usage ratio (e.g. 30% of whole dataset)
-    train_ratios = [0.3,0.5,0.7,0.9]
+    # Re-training best model with whole dataset (excluding holding data)
+    model_dir = model_dir1 + '_' + str(ind_best)
+    action_classifier = tf.estimator.Estimator(
+        model_fn=cnn_model_fn, model_dir=model_dir)
+    train_input_fn = gen_input_fn_wrapper(data.images, data.labels, bs=32, ep=1, sh=True, dualfeature=Flag_Two_Stream)
+    for i in range(training_times):
+        action_classifier.train(
+            input_fn=train_input_fn, steps=800, hooks=[logging_hook])
+    # Test hold data
+    eval_Te_input_fn = gen_input_fn_wrapper(test_d.images, test_d.labels, bs=32, ep=1, sh=True,
+                                                dualfeature=Flag_Two_Stream)
+    acc_te = evaluate_test_print_result(action_classifier, eval_Te_input_fn)
+    # Test filmed data
+    eval_Film_input_fn = gen_input_fn_wrapper(test_film.images, test_film.labels, bs=32, ep=1, sh=True,
+                                                  dualfeature=Flag_Two_Stream)
+    acc_film = evaluate_film_print_result(action_classifier, eval_Film_input_fn)
+    print("Accuracy for testing data with cross-validation:",acc_te)
+    print("Accuracy for film data with cross-validation:", acc_film)
+
+if Flag_DataAug_Comparision_Test:
+    train_ratios = 0.8
+    tr_eval_ratio = 0.2
+    train1, eval1, test1, test_film = single_dataset_gen(tr_te_ratio, tr_eval_ratio, FeatureType.RGB, False)
+    #train_data1 = train1.images
+    #train_labels1 = train1.labels
+    eval_data = eval1.images
+    eval_labels = eval1.labels
+
     total_acc = []
-    model_dir1 = "/tmp/cnn_model_reduce"
+    model_dir1 = "/tmp/cnn_model_dataaug"
     count = 0
-    print("Reduced training test starts...")
-    for tr_ratio in train_ratios:
-        # Generate new dataset by train_ratios
-        train_data, train_labels, eval_data, \
-        eval_labels, test_data, test_labels, \
-        test_film_data, test_film_labels = gen_dataset(train_ratio=tr_ratio, tr_eval_ratio=0.3)
+    train_aug = []
+    # (origin data, flag_reduce, flag_rotate, flag_mirror, flag_crop)
+    train_aug.append(train1)
+    train_aug.append(data_augmentation(train1.copy(), True, False, False, False))
+    train_aug.append(data_augmentation(train1.copy(), False, True, False, False))
+    train_aug.append(data_augmentation(train1.copy(), False, False, True, False))
+    train_aug.append(data_augmentation(train1.copy(), False, False, False, True))
+
+    for i in range(5):
         # Create model
         model_dir = model_dir1 + '_' + str(count)
         action_classifier = tf.estimator.Estimator(
             model_fn=cnn_model_fn, model_dir=model_dir)
         # Training
         print("Model:", model_dir, "Training start")
-        train_input_fn = gen_input_fn_wrapper(train_data, train_labels, bs=16, ep=1, sh=True, dualfeature=Flag_Two_Stream)
-        action_classifier.train(
-          input_fn=train_input_fn,
-          steps=500, #20000
-          hooks=[logging_hook])
+
+        train_input_fn = gen_input_fn_wrapper(train_aug[i].images, train_aug[i].labels , bs=32, ep=1, sh=True,
+                                              dualfeature=Flag_Two_Stream)
+        # N steps training
+        for j in range(1):
+            action_classifier.train(
+                input_fn=train_input_fn,
+                steps=500,  # 20000
+                hooks=[logging_hook])
         # Evaluate
-        eval_Tr_input_fn = gen_input_fn_wrapper(train_data, train_labels, bs=32, ep=1, sh=False, dualfeature=Flag_Two_Stream)
-        eval_input_fn = gen_input_fn_wrapper(eval_data, eval_labels, bs=32, ep=1, sh=False, dualfeature=Flag_Two_Stream)
+        eval_Tr_input_fn = gen_input_fn_wrapper(train_aug[i].images, train_aug[i].labels, bs=32, ep=1, sh=False,
+                                                dualfeature=False)
+        eval_input_fn = gen_input_fn_wrapper(eval_data, eval_labels, bs=32, ep=1, sh=False, dualfeature=False)
         acc_tr, acc_eval = evaluate_tr_ev_print_result(action_classifier, eval_Tr_input_fn, eval_input_fn)
         total_acc.append(acc_eval)
         count += 1
     print("Average Acc:", sum(total_acc) / len(total_acc))
     plot_acc_bar(total_acc, 'Four kinds of training ratio')
 
-# Long 2500 steps Training
-if Flag_Long_Training:
-    acc_train = []
+if Flag_All_Topology_Comparison_Test:
+    acc_total = []
+    topologyType = TopologyType.SingleCNN_RGB
+    acc_total.append(all_in_one_test(topologyType, 'comp', 20, 0.8, 0.2),32)
+    topologyType = TopologyType.SingleCNN_OF
+    acc_total.append(all_in_one_test(topologyType, 'comp', 20, 0.8, 0.2),32)
+    topologyType = TopologyType.SingleCNN_OF_MULTI
+    acc_total.append(all_in_one_test(topologyType, 'comp', 20, 0.8, 0.2),32)
+    topologyType = TopologyType.DurlCNN_RGB_OFs
+    acc_total.append(all_in_one_test(topologyType, 'comp', 20, 0.8, 0.2),32)
     acc_eval = []
     acc_test = []
-    acc_test_film = []
+    acc_film = []
+    for i in range(4):
+        print(acc_total[i])
+        acc_eval.append(acc_total[i][0])
+        acc_test.append(acc_total[i][1])
+        acc_film.append(acc_total[i][2])
+    print("Accuracy of eval:", acc_eval)
+    print("Accuracy of test:", acc_test)
+    print("Accuracy of film:", acc_film)
+    plot_acc_bar(acc_eval, 'Evaluation Eval data:RGB, OF, OFs, TwoCNN')
+    #plot_acc_bar(acc_test, 'Evaluation Test data:RGB, OF, OFs, TwoCNN')
+    #plot_acc_bar(acc_film, 'Evaluation Film data:RGB, OF, OFs, TwoCNN')
+# For all parameter tuning
+if Flag_Paramter_Tuning_Test:
+    acc_total = []
+    #acc_total.append([0.72, 0.7822581, 0.28])
+    topologyType = TopologyType.SingleCNN_RGB
+    # Batch size tuning (8,16,32,48,64)
+    '''
+    acc_total.append(all_in_one_test(topologyType, 'Tuning0', 30, 0.8, 0.2, 8 ))
+    acc_total.append(all_in_one_test(topologyType, 'Tuning1', 30, 0.8, 0.2, 16))
+    acc_total.append(all_in_one_test(topologyType, 'Tuning2', 30, 0.8, 0.2, 32))
+    acc_total.append(all_in_one_test(topologyType, 'Tuning3', 30, 0.8, 0.2, 48))
+    acc_total.append(all_in_one_test(topologyType, 'Tuning4', 30, 0.8, 0.2, 64))
+    '''
+    # Learning rate tuning (modify LR in cnn_input_fn) (0.05, 0.2,0.35,0.5,0.65 )
+    '''
+    learning_rate_global = 0.005
+    acc_total.append(all_in_one_test(topologyType, 'TuningLR0', 30, 0.8, 0.2, 32))
+    learning_rate_global = 0.025
+    acc_total.append(all_in_one_test(topologyType, 'TuningLR1', 30, 0.8, 0.2, 32))
+    learning_rate_global = 0.05
+    acc_total.append(all_in_one_test(topologyType, 'TuningLR2', 30, 0.8, 0.2, 32))
+    learning_rate_global = 0.1
+    acc_total.append(all_in_one_test(topologyType, 'TuningLR3', 30, 0.8, 0.2, 32))
+    learning_rate_global = 0.15
+    acc_total.append(all_in_one_test(topologyType, 'TuningLR4', 30, 0.8, 0.2, 32))
+    '''
+    '''
+    # Dropout ratio tuning
+    drop_ratio_global = 0.05
+    acc_total.append(all_in_one_test(topologyType, 'TuningDR0', 30, 0.8, 0.2, 32))
+    drop_ratio_global = 0.25
+    acc_total.append(all_in_one_test(topologyType, 'TuningDR1', 30, 0.8, 0.2, 32))
+    drop_ratio_global = 0.45
+    acc_total.append(all_in_one_test(topologyType, 'TuningDR2', 30, 0.8, 0.2, 32))
+    drop_ratio_global = 0.65
+    acc_total.append(all_in_one_test(topologyType, 'TuningDR3', 30, 0.8, 0.2, 32))
+    drop_ratio_global = 0.85
+    acc_total.append(all_in_one_test(topologyType, 'TuningDR4', 30, 0.8, 0.2, 32))
+    '''
+    # Training ratio tuning
+    acc_total.append(all_in_one_test(topologyType, 'TRRatio0', 30, 0.20, 0.2, 32))
+    acc_total.append(all_in_one_test(topologyType, 'TRRatio1', 30, 0.35, 0.2, 32))
+    acc_total.append(all_in_one_test(topologyType, 'TRRatio2', 30, 0.55, 0.2, 32))
+    acc_total.append(all_in_one_test(topologyType, 'TRRatio3', 30, 0.75, 0.2, 32))
+    acc_total.append(all_in_one_test(topologyType, 'TRRatio4', 30, 0.95, 0.2, 32))
+    # For visualization
+    acc_eval = []
+    acc_test = []
+    acc_film = []
+    for i in range(5):
+        print(acc_total[i])
+        acc_eval.append(acc_total[i][0])
+        acc_test.append(acc_total[i][1])
+        acc_film.append(acc_total[i][2])
+    #plot_acc_bar(acc_eval, 'Eval, Batch Size:8,16,32,48,64')
+    #plot_acc_bar(acc_test, 'Test, Batch Size:8,16,32,48,64')
+    #plot_acc_bar(acc_film, 'Film, Batch Size:8,16,32,48,64')
 
-    loss_train = []
-    print("long long long training starts...")
-    # Generate new dataset by train_ratios
-    train_data, train_labels, eval_data, \
-    eval_labels, test_data, test_labels, \
-    test_film_data, test_film_labels = gen_dataset(train_ratio=0.8, tr_eval_ratio=0.2)
+    #plot_acc_bar(acc_eval, 'Eval, LR:0.005,0.025,0.05,0.1,0.15')
+    #plot_acc_bar(acc_test, 'Test, LR:0.005,0.025,0.05,0.1,0.15')
+    #plot_acc_bar(acc_film, 'Film, LR:0.005,0.025,0.05,0.1,0.15')
 
-    for i in range(30):
-        # Train the model
-        train_input_fn = gen_input_fn_wrapper(train_data, train_labels, bs=32, ep=2, sh=True, dualfeature=Flag_Two_Stream)
-        action_classifier.train(
-          input_fn=train_input_fn,
-          steps=2000, #20000
-          hooks=[logging_hook])
+    #plot_acc_bar(acc_eval, 'Eval, Dropout:0.05,0.25,0.45,0.65,0.85')
+    #plot_acc_bar(acc_test, 'Test, Dropout:0.05,0.25,0.45,0.65,0.85')
+    #plot_acc_bar(acc_film, 'Film, Dropout:0.05,0.25,0.45,0.65,0.85')
 
-        # Evaluate training data
-        eval_Tr_input_fn =gen_input_fn_wrapper(train_data, train_labels, bs=32, ep=1, sh=True, dualfeature=Flag_Two_Stream)
-        eval_Tr_results = action_classifier.evaluate(input_fn=eval_Tr_input_fn)
-        print("Evaluate Training data:", eval_Tr_results)
-        # Evaluate evaluating data
-        eval_input_fn =  gen_input_fn_wrapper(eval_data, eval_labels, bs=32, ep=1, sh=True, dualfeature=Flag_Two_Stream)
-        eval_results = action_classifier.evaluate(input_fn=eval_input_fn)
-        print("Evaluate Evaluating data:",eval_results)
-        # log
-        acc_eval.append(eval_results['accuracy'])
-        acc_train.append(eval_Tr_results['accuracy'])
-        loss_train.append((eval_Tr_results['loss']))
-        # Testing the model by filmed video.
-        test_input_fn = gen_input_fn_wrapper(test_film_data, test_film_labels, bs=1, ep=1, sh=True, dualfeature=Flag_Two_Stream)
-        test_results = action_classifier.evaluate(input_fn=test_input_fn)
-        print("Evaluate Testing_Filmed data:",test_results)
-        acc_test_film.append(test_results['accuracy'])
-    plot_acc_loss(acc_train,acc_eval,loss_train )
+    plot_acc_bar(acc_eval, 'Eval, TRRatio:0.20,0.35,0.55,0.75,0.95')
+    #plot_acc_bar(acc_test, 'Test,TRRatio:0.20,0.35,0.55,0.75,0.95')
+    #plot_acc_bar(acc_film, 'Film, TRRatio:0.20,0.35,0.55,0.75,0.95')
 
 # Debug
 # The shape of each layer in CNN model

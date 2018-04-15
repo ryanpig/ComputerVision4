@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from data_aug import tf_distort_images
 from sklearn.model_selection import train_test_split
 from enum import Enum
-
+from copy import deepcopy
 
 class FeatureType(Enum):
     RGB = 1
@@ -31,7 +31,7 @@ class FeatureType(Enum):
 # Feature type: RGB, OpticalFlow, multi OpticalFlow, Dual stream
 Global_Feature_Type = FeatureType.Dual
 
-Flag_data_aug = False #Double training data (Only support RGB features)
+Flag_data_aug = True#Double training data (Only support RGB features)
 Flag_Visual = True #Showing sample pictures after feature extraction
 Division_ratio = 0.2 # (20% eval), the data ratio for training and evaluating data.
 Training_usage_ratio = 0.03 #Decide how much training examples will be used. (0.03 -> 18examples
@@ -51,6 +51,11 @@ class examples:
                 self.images.append(dualFeature())
                 #self.images[i].images1 = np.zeros([120,120,3], dtype=np.float32)
                 #self.images[i].images2 = np.zeros([120, 120, 20], dtype=np.float32)
+    def copy(self):
+        a =  examples(len(self.images), FeatureType.RGB)
+        a.images = self.images.copy()
+        a.labels = self.labels.copy()
+        return a
 class dualFeature:
     def __init__(self):
         self.images1 = np.zeros([120,120,3], dtype=np.float32) #Spatial feature
@@ -59,7 +64,7 @@ def normalize(arr):
     if arr.max() > 1.0:
         arr/=255.0
     return arr
-def single_dataset_gen(train_test_ratio, train_eval_ratio,feature_type):
+def single_dataset_gen(train_test_ratio, train_eval_ratio,feature_type, flag_data_aug):
     #Train_test_ratio = train_test_ratio
     #Division_ratio = train_eval_ratio
 
@@ -68,8 +73,9 @@ def single_dataset_gen(train_test_ratio, train_eval_ratio,feature_type):
     # Divide data into training and evaluating data
     train_d, eval_d = dataDivision(traindata, train_eval_ratio, feature_type)
     # Data Augmentation (Double training data:496 -> 992)
-    if Flag_data_aug:
-        train_d = data_augmentation(train_d)
+    if flag_data_aug:
+        # (images, flag_reduce, flag_rotate, flag_mirror,  flag_crop)
+        train_d = data_augmentation(train_d,False,False,True,False)
     # Display result
     print("Generate Feature type:",str(feature_type))
     print("Train/Test Usage Ratio:", train_test_ratio,
@@ -81,10 +87,10 @@ def single_dataset_gen(train_test_ratio, train_eval_ratio,feature_type):
     return train_d, eval_d, test_d, test_film
 
 # Only return train & eval data.
-def kfold_dataset_gen(feature_type, train_eval_ratio):
+def kfold_dataset_gen(feature_type, train_test_ratio):
     # Read data and labeling
-    traindata, test_d = readData(feature_type, train_eval_ratio=train_eval_ratio)
-    return traindata
+    traindata, test_d, test_film = readData(feature_type, train_test_ratio)
+    return traindata, test_d, test_film
 def readData(feature_type, train_test_ratio):
     # Get file lists from both training and testing folders
     if feature_type == feature_type.RGB:
@@ -141,11 +147,11 @@ def labeling(filelist, feature_type):
             # Normalization
             normalize(np.asarray(examples_d.images[i], dtype=np.float32))
         elif feature_type == FeatureType.OPTICAL_MULTI:
-            dir_train = './Data\\training_optical_multi\\'
-            dir_test = './Data\\testing_optical_multi\\'
+            dir_train = './Data\\training_optical_multi\\'  # In MacOS, the '\\' has to be replaced to '/'
+            dir_test = './Data\\testing_optical_multi\\'   # And, also change split function as below
             for n in range(10):
                 # ./Data/training_optical\\BrushingTeeth_g01_c01_of.jpg
-                filename = filelist[i].split('_of')[0].split('\\')[1]
+                filename = filelist[i].split('_of')[0].split('\\')[1]   # ('\\')[1] -> ('/')[-1]
                 dir_type = filelist[i].split('Data/')[1].split('_')[0]
                 print(filename)
                 #print(dir_type)
@@ -162,10 +168,10 @@ def labeling(filelist, feature_type):
                 normalize(np.asarray(examples_d.images[i], dtype=np.float32))
         elif feature_type == FeatureType.Dual:
             #Spatio features (RGB) (120,120,3)
-            filename = filelist[i].split('_of')[0].split('\\')[1]  # BrushingTeeth_g01_c01
-            dir_type = filelist[i].split('Data/')[1].split('_')[0]  # training
-            dir_train = './Data\\training\\'
-            dir_test = './Data\\testing\\'
+            filename = filelist[i].split('_of')[0].split('\\')[1]  # In MacOS, the '\\' has to be replaced to '/'
+            dir_type = filelist[i].split('Data/')[1].split('_')[0]    # ('\\')[1] -> ('/')[-1]
+            dir_train = './Data\\training\\'        # In MacOS, the '\\' has to be replaced to '/'
+            dir_test = './Data\\testing\\'          # In MacOS, the '\\' has to be replaced to '/'
             if dir_type == 'training':
                 path = dir_train + filename + '.jpg'
             elif dir_type == 'testing':
@@ -175,11 +181,11 @@ def labeling(filelist, feature_type):
             normalize(examples_d.images[i].images1)
 
             #Motion Features (Optical flow) (120,120,20)
-            dir_train = './Data\\training_optical_multi\\'
-            dir_test = './Data\\testing_optical_multi\\'
+            dir_train = './Data\\training_optical_multi\\'  # In MacOS, the '\\' has to be replaced to '/'
+            dir_test = './Data\\testing_optical_multi\\'    # In MacOS, the '\\' has to be replaced to '/'
             for n in range(10):
                 # ./Data/training_optical\\BrushingTeeth_g01_c01_of.jpg
-                filename = filelist[i].split('_of')[0].split('\\')[1] #BrushingTeeth_g01_c01
+                filename = filelist[i].split('_of')[0].split('\\')[1]  # ('\\')[1] -> ('/')[-1]
                 dir_type = filelist[i].split('Data/')[1].split('_')[0] #training
                # print(filename)
                # print(dir_type)
@@ -216,18 +222,20 @@ def dataDivision(data, division_ratio, feature_type):
     return train, evaluate
 
 # To do list : Add translation from data_aug_translation.py
-def data_augmentation(train_d):
-    distorted_images = tf_distort_images(train_d.images)
+def data_augmentation(train_d,flag_reduce, flag_rotate, flag_mirror, flag_crop):
+    distorted_images = tf_distort_images(train_d.images, flag_reduce, flag_rotate, flag_mirror, flag_crop)
 
     for i in range(5):
-        print(distorted_images[i])
+        #print(sum(distorted_images[i]))
         np.array((distorted_images[i]), dtype=np.float32)
         distorted_images[i] = cv2.cvtColor(distorted_images[i], cv2.COLOR_RGB2BGR)
     train_d.images = np.concatenate((train_d.images, distorted_images), axis=0)
     train_d.labels = np.concatenate((train_d.labels, train_d.labels), axis=0)
     return train_d
 def debug():
-    train1,eval1, test1 = single_dataset_gen(train_usage_ratio=0.03,train_eval_ratio=0.2)
+    feature_type1 = FeatureType.RGB
+    train1, eval1, test1, test_film = single_dataset_gen(train_test_ratio=0.8, train_eval_ratio=0.1,
+                                                         feature_type=feature_type1, flag_data_aug=True)
     train_data = train1.images
     train_labels = train1.labels
     eval_data = eval1.images
@@ -294,6 +302,7 @@ def debug_dual():
             plt.title(str1)
             plt.show()
 # data = kfold_dataset_gen()
+
 
 #debug()
 #debug_dual()
