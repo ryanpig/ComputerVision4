@@ -18,4 +18,5 @@ Reference:
 - UCF101 dataset [here](http://crcv.ucf.edu/data/UCF101.php)
 
 Result:
- 
+<img src="Result/Accuracy_table_by_actions.jpg">
+<img src="Result/Training-Evaluation-Record.jpg">
