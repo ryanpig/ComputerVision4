@@ -21,6 +21,6 @@ We use UCF101 action recognition video dataset and we filmed own videos to perfo
 - UCF101 dataset [here](http://crcv.ucf.edu/data/UCF101.php)
 - Simonyan, Karen, and Andrew Zisserman. "Two-stream convolutional networks for action recognition in videos." Advances in neural information processing systems. 2014. [here](https://papers.nips.cc/paper/5353-two-stream-convolutional-networks-for-action-recognition-in-videos.pdf)
 
-Result:
+# Result:
 <img src="Result/Accuracy_table_by_actions.jpg">
 <img src="Result/Training-Evaluation-Record.jpg">
